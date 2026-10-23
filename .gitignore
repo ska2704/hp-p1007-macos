@@ -1,0 +1,5 @@
+build/
+*.dmg
+*.acl
+*.dl
+.DS_Store

@@ -1,0 +1,47 @@
+#!/bin/sh
+# CUPS filter for the HP LaserJet P1005 / P1006 / P1007 / P1008 on macOS.
+#
+# Input:  CUPS raster from macOS's own cgpdftoraster (8-bit gray, 1200x600 dpi).
+# Output: firmware download + XQX stream (foo2xqx) for the usb backend.
+#
+# No Ghostscript: the macOS CUPS sandbox will not run binaries from
+# /opt/homebrew or /usr/local, so everything this filter runs lives next to it.
+#
+# Copyright (C) 2026 hp-p1007-macos contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Usage (by CUPS): p100x-filter job user title copies options [file]
+
+DIR=$(cd "$(dirname "$0")" && pwd)
+PATH="$DIR:/usr/bin:/bin"; export PATH
+
+[ $# -lt 5 ] && { echo "ERROR: usage: $0 job user title copies options [file]" >&2; exit 1; }
+TITLE="$3"; USER="$2"; OPTS="$5"; FILE="$6"   # copies are made by CUPS before this filter
+
+# Firmware: named in the queue's PPD (*HpP100xFirmware), else the only one installed.
+FW=""
+[ -n "$PPD" ] && [ -r "$PPD" ] && \
+  FW=$(sed -n 's/^\*HpP100xFirmware: *"\(.*\)".*/\1/p' "$PPD" | head -1)
+if [ -z "$FW" ]; then
+  set -- "$DIR"/sihpP100*.dl
+  [ $# -eq 1 ] && FW=$(basename "$1")
+fi
+[ -r "$DIR/$FW" ] || { echo "ERROR: firmware '$FW' not found in $DIR" >&2; exit 1; }
+
+# Paper size from the job options (default A4).
+PAPER=9; DIM=9920x7016
+case " $OPTS " in
+  *PageSize=Letter*|*media=[Ll]etter*) PAPER=1;  DIM=10200x6600 ;;
+  *PageSize=Legal*|*media=[Ll]egal*)   PAPER=5;  DIM=10200x8400 ;;
+  *PageSize=A5*|*media=[Aa]5*)         PAPER=11; DIM=6992x4960 ;;
+esac
+
+# The printer forgets its firmware when switched off.  Sending it with every
+# job costs a few seconds and is harmless when it is already loaded.
+echo "INFO: Sending firmware to printer" >&2
+cat "$DIR/$FW" || { echo "ERROR: cannot read firmware $DIR/$FW" >&2; exit 1; }
+
+echo "INFO: Printing pages" >&2
+if [ -n "$FILE" ]; then exec < "$FILE"; fi
+rastertopbm | foo2xqx -r1200x600 -g$DIM -p$PAPER -m1 -n1 -d1 -s7 -T3 -J "$TITLE" -U "$USER" \
+  || { echo "ERROR: driver failed" >&2; exit 1; }

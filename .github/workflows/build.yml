@@ -1,0 +1,24 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Apple's HP driver package is about 580 MB; download it once.
+      - uses: actions/cache@v4
+        with:
+          path: build/HewlettPackardPrinterDrivers.dmg
+          key: apple-hp-printer-drivers-5.1.1
+
+      - name: Build and self-test (P1005/P1007, A4)
+        run: ./install.sh --build-only --model P1007
+
+      - name: Build and self-test (P1006/P1008, Letter)
+        run: ./install.sh --build-only --model P1008 --paper Letter
